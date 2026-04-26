@@ -1,0 +1,168 @@
+---
+title: "Course_Project_1_Coursera"
+output: html_document
+---
+
+This R markdown document will fulfill the requirements for the Johns Hopkins Course Project 1 for the Reproducible Research Module in Coursera where I need to analysis some data tracking the # of steps over a couple months in every 5 minute period. This R markdown document will show each step along the analysis with the code as well as the graphs and other questions that are answered.
+
+
+
+## Step 1: Import and Load the Activity Data
+
+The first step of this analysis will be to import the data from the folder where the data is saved. I have been using the here package in R to help with file paths using an R Project because the here package allows dynamic file paths based on the directory of the R project.
+
+```{r echo = TRUE}
+
+library(tidyverse)
+library(here)
+
+file <- "activity.csv"
+
+file_pathway <- file.path(here(),"Data/Reproducible_Research",file)
+
+Activity_Data <- read.csv(file_pathway)
+
+#Convert to a date and in this case, I am not going to use lubridate package which is very helpful
+
+Activity_Data$date <- as.Date(Activity_Data$date, format = "%Y-%m-%d")
+```
+
+##Step 2: Find the mean number of steps taken per day
+
+In this example, I will create a histogram of the # of steps taken per day during the roughly 2 month period of time that this data was collected. In this example, I will take the # of steps for each 5 minute interval throughout the day and sum them up before making the histogram to ensure it only accounts the amount of steps taken daily including all the intervals per day. Furthermore, in the ggplot that I created, the red horizontal line is equal to the median daily # of steps and the blue line is equal to the mean daily # of steps.
+
+```{r echo = TRUE}
+#What is the mean and median # of steps taken each day through the entire period of time (about 2 months)?
+
+Daily_Steps <- Activity_Data %>% 
+  group_by(date) %>% 
+  summarize(Daily_Steps = sum(steps, na.rm = TRUE))
+
+paste("The mean # of steps per day taken is", round(mean(Daily_Steps$Daily_Steps), 1),
+      "and the median # of steps per day taken is", round(median(Daily_Steps$Daily_Steps), 1))
+
+B <- Daily_Steps %>%
+  ggplot(aes(x = Daily_Steps))+
+  geom_histogram(bins = 50)+
+  theme_bw()+
+  labs(title = paste("Histogram of Total Daily Steps from",Daily_Steps$date[1], "to",Daily_Steps$date[length(Daily_Steps$date)]),
+       x = "Total Daily Steps",
+       y = "Occurences",
+       subtitle = "The mean # of steps is in Blue and the median # of steps is in red")+
+  geom_vline( xintercept = (round(mean(Daily_Steps$Daily_Steps))),
+              show.legend = TRUE,
+              color = "blue")+
+  geom_vline( xintercept = (round(median(Daily_Steps$Daily_Steps))),
+              show.legend = TRUE,
+              color = "red")
+
+print(B)
+```
+
+
+## Step 3: What is the average daily pattern of steps?
+
+In this example, unlike above where I am adding up the # of steps for each interval per day and then making a histogram, I will be averaging the # of steps taken across the entire 2 month period for the same time interval per day and graphing that data using Base R (rather than ggplot2).
+
+Furthermore, I will print out a small tibble/data frame with the time interval with the maximum mean # of steps
+
+```{r echo = TRUE}
+
+Time_Series_Data <- Activity_Data %>%
+  group_by(interval) %>%
+  summarize(mean_steps = mean(steps, na.rm = TRUE),
+            median_steps = median(steps, na.rm = TRUE))
+
+#Make the graph
+with(Time_Series_Data, plot(interval, mean_steps, type = "l", 
+                            xlab = "Time interval",
+                            ylab = "Mean steps taken per  period",
+     col = "#311432"))
+
+#Time interval with maximum average # of steps
+Time_Series_Data %>%
+  filter(mean_steps == max(mean_steps)) %>%
+  print()
+
+```
+
+
+
+##Step 4: Identify how to deal with NA values
+
+For the next step, I need to identify what to do with the values that are NA or not recorded. After isolating the rows where there is no collected data, I decided to  substitute the NA values by taking what the mean # of steps would be for that time interval if the NA values were removed. Consequently, lets say that from the interval of 0-5, the mean # of steps was *2 steps* but the value for this particular day is NA. In that case, the NA value will be replaced with 2.
+
+```{r echo = TRUE}
+echo = TRUE
+NA_Data <- Activity_Data[is.na(Activity_Data$steps) == TRUE,]
+
+dim(NA_Data)
+
+paste("The # of rows of NA data is",dim(NA_Data)[1],"and the # of columns is",dim(NA_Data)[2])
+
+#Strategy for inputting missing data will be to take the mean # of steps for that time period each day and then graph a histograph
+
+Filled_Data <- NA_Data %>%
+  inner_join(., Time_Series_Data, by = "interval") %>%
+  mutate(steps = mean_steps) %>%
+  select(steps, date, interval) %>%
+  bind_rows(.,Activity_Data) %>%
+  drop_na()
+
+
+#Now I am going to make the graph!
+Filled_Data %>%
+  group_by(date) %>% 
+  summarize(Daily_Steps = sum(steps, na.rm = TRUE)) %>%
+  ggplot(aes(x=Daily_Steps))+
+  geom_histogram(bins = 50)+
+  theme_bw()
+```
+
+## Step 5: Identify different patterns in daily steps between week day and weekend days.
+
+In the final step for this analysis, I will try to compare the mean # of steps across each time interval per day for the entire two months. However, I will separate the days so that weekends (Sat and Sun) are differentiated from weekdays (Mon-Fri). Since the work week is Mon-Fri, it seems like a likely possibility that peoples' walking patterns, and consequently their # of daily steps and their mean # of steps throughout the day might be different. 
+
+In order to do this, I used the weekday function to convert each day in the Activity_Data dataset and identify which day of the week it was and then mark it as either a "weekday" or "weekend"day. Then, I can calculate the mean # of steps at each time interval throughout the day for the two types of days and graph them to look for any differences.
+
+It turns out that yes, there appears to be moderate different in step patterns for weekend days compared to weekdays where people seem to walk more during the weekend. This makes sense because if people aren't at work, they can go out and do things outside of the house. Although many people might have jobs where they walk a lot, there are many jobs that don't have a lot of physical activity and consequently they will have less steps during that day.
+```{r echo = TRUE}
+### Are there differences in activity patterns between weekdays and weekends?
+
+
+Activity_Data$day <- weekdays(Activity_Data$date)
+
+Activity_Data$day_type <- ifelse(Activity_Data$day != c("Saturday","Sunday"), "Weekday", "Weekend")
+
+
+##ggplot example
+
+Activity_Data %>%
+  group_by(interval, day_type) %>%
+  summarize(mean_steps = mean(steps, na.rm = TRUE)) %>%
+  ggplot(aes(x=interval, y = mean_steps))+
+  geom_line()+
+  theme_bw()+
+  labs(y = "Mean # of Steps per day",
+       x = "Time Interval",
+       title = "Daily Mean Steps across each time interval for the day for Weekdays and Weekend days")+
+  facet_wrap(~day_type)
+
+#non-ggplot graph (although I am still using dplyr rather than tapply)
+
+weekend_data <- subset(Activity_Data, day_type == "Weekend")
+
+weekend_data <- weekend_data %>% group_by(interval) %>%
+  summarize(mean_steps = mean(steps, na.rm = TRUE))
+  
+weekday_data <- subset(Activity_Data, day_type == "Weekday")
+
+weekday_data <- weekday_data %>% group_by(interval) %>%
+              summarize(mean_steps = mean(steps, na.rm = TRUE))
+
+
+with(weekday_data, plot(x = interval, y = mean_steps, xlab = "Time Interval", type ="l",
+                        ylab = "Mean # of Steps per day", col = "blue"))
+with(weekend_data, points(x=interval, y = mean_steps, col = "red", type = "l"))
+```
+
